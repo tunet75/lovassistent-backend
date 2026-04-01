@@ -1,7 +1,7 @@
 {
   "name": "lovassistent-backend",
-  "version": "1.0.0",
-  "description": "Backend for norsk lovassistent-app",
+  "version": "2.0.0",
+  "description": "Backend for norsk lovassistent-app (Stortinget + Claude)",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -9,6 +9,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.8.10",
     "axios": "^1.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
