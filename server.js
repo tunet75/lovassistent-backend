@@ -1,186 +1,155 @@
-// ============================================================
-// Lovassistent Backend – Node.js / Express
-// ============================================================
-// Krever: Node.js 18+
-// Installer: npm install express axios dotenv cors
-// Start:     node server.js
-// ============================================================
-
 import express from "express";
 import axios from "axios";
 import cors from "cors";
 import dotenv from "dotenv";
+import { DOMParser } from "@xmldom/xmldom";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
-
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
-
 app.options("*", cors());
 
 const PORT = process.env.PORT || 3000;
-const LOVDATA_API_KEY = process.env.LOVDATA_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 // ------------------------------------------------------------
-// Hjelper: kall Lovdata API
+// Hjelper: søk i Stortingets åpne API (ingen nøkkel nødvendig)
 // ------------------------------------------------------------
-const lovdata = axios.create({
-  baseURL: "https://api.lovdata.no",
-  headers: {
-    "X-API-Key": LOVDATA_API_KEY,
-    "Accept": "application/json",
-  },
-});
+async function sokStortinget(nokkelord) {
+  const sesjoner = ["2023-2024", "2022-2023", "2021-2022"];
+  let resultater = [];
+
+  for (const sesjon of sesjoner) {
+    try {
+      const url = `https://data.stortinget.no/eksport/saker?sesjonid=${sesjon}&emne=${encodeURIComponent(nokkelord)}&format=json`;
+      const res = await axios.get(url, { timeout: 8000 });
+      const saker = res.data?.saker_liste?.sak_liste || [];
+      saker.forEach(s => {
+        if (s.tittel) {
+          resultater.push({
+            tittel: s.tittel,
+            sesjon,
+            status: s.status || "",
+            type: s.type || "",
+            id: s.id || "",
+            url: `https://stortinget.no/no/Saker-og-publikasjoner/Saker/Sak/?p=${s.id}`,
+          });
+        }
+      });
+    } catch (e) {
+      // prøv neste sesjon
+    }
+    if (resultater.length >= 6) break;
+  }
+
+  // Fallback: søk bredt i nyeste sesjon og filtrer selv
+  if (resultater.length === 0) {
+    try {
+      const url = `https://data.stortinget.no/eksport/saker?sesjonid=2023-2024&format=json`;
+      const res = await axios.get(url, { timeout: 10000 });
+      const saker = res.data?.saker_liste?.sak_liste || [];
+      const kw = nokkelord.toLowerCase();
+      saker.filter(s =>
+        s.tittel && s.tittel.toLowerCase().includes(kw)
+      ).slice(0, 6).forEach(s => {
+        resultater.push({
+          tittel: s.tittel,
+          sesjon: "2023-2024",
+          status: s.status || "",
+          type: s.type || "",
+          id: s.id || "",
+          url: `https://stortinget.no/no/Saker-og-publikasjoner/Saker/Sak/?p=${s.id}`,
+        });
+      });
+    } catch (e) {}
+  }
+
+  return resultater.slice(0, 5);
+}
+
+// ------------------------------------------------------------
+// Hjelper: Claude AI-kall
+// ------------------------------------------------------------
+async function kallClaude(system, bruker, maxTokens = 300) {
+  const res = await axios.post(
+    "https://api.anthropic.com/v1/messages",
+    {
+      model: "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: "user", content: bruker }],
+    },
+    {
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+    }
+  );
+  return res.data.content[0].text.trim();
+}
 
 // ------------------------------------------------------------
 // POST /api/spor
-// Tar imot fritekst-spørsmål og returnerer relevante lover
-// ------------------------------------------------------------
-// Request body: { sporsmal: "Kan arbeidsgiver si meg opp mens jeg er sykemeldt?" }
-// Response:     { svar: "...", lover: [...] }
 // ------------------------------------------------------------
 app.post("/api/spor", async (req, res) => {
   const { sporsmal } = req.body;
-
   if (!sporsmal || sporsmal.trim().length < 3) {
     return res.status(400).json({ feil: "Spørsmål mangler eller er for kort." });
   }
 
   try {
-    // Steg 1: Bruk Claude til å trekke ut nøkkelord for Lovdata-søk
-    const nokkelordSvar = await axios.post(
-      "https://api.anthropic.com/v1/messages",
-      {
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 200,
-        system:
-          "Du er en juridisk assistent. Trekk ut 1-3 norske juridiske nøkkelord fra spørsmålet som er egnet til å søke i Lovdata. Svar kun med nøkkelordene adskilt med komma, ingen annen tekst.",
-        messages: [{ role: "user", content: sporsmal }],
-      },
-      {
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json",
-        },
-      }
+    // Steg 1: Claude trekker ut nøkkelord
+    const nokkelord = await kallClaude(
+      "Du er en juridisk assistent. Trekk ut 1-2 norske juridiske nøkkelord fra spørsmålet egnet for søk. Svar kun med nøkkelordene adskilt med komma, ingen annen tekst.",
+      sporsmal,
+      100
     );
 
-    const nokkelord = nokkelordSvar.data.content[0].text.trim();
+    // Steg 2: Søk i Stortingets API
+    const saker = await sokStortinget(nokkelord.split(",")[0].trim());
 
-    // Steg 2: Søk i Lovdata med nøkkelordene
-    const sokResultat = await lovdata.get("/v1/search", {
-      params: { q: nokkelord, max: 5 },
-    });
+    // Steg 3: Claude forklarer basert på saker
+    const kontekst = saker.length > 0
+      ? saker.map(s => `- ${s.tittel} (${s.sesjon}, status: ${s.status})`).join("\n")
+      : "Ingen direkte saker funnet i Stortingets database.";
 
-    const lover = sokResultat.data.documents || [];
-
-    // Steg 3: Hent lovtekst for de mest relevante treffene (maks 2)
-    const lovtekster = await Promise.all(
-      lover.slice(0, 2).map(async (lov) => {
-        try {
-          const detalj = await lovdata.get("/renderRefID", {
-            params: { refID: lov.refId },
-          });
-          return {
-            tittel: lov.title,
-            refId: lov.refId,
-            tekst: detalj.data?.text?.slice(0, 2000) || "", // Begrens lengde
-          };
-        } catch {
-          return { tittel: lov.title, refId: lov.refId, tekst: "" };
-        }
-      })
-    );
-
-    // Steg 4: La Claude forklare svaret basert på lovtekstene
-    const kontekst = lovtekster
-      .map((l) => `### ${l.tittel} (${l.refId})\n${l.tekst}`)
-      .join("\n\n");
-
-    const forklaring = await axios.post(
-      "https://api.anthropic.com/v1/messages",
-      {
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 800,
-        system: `Du er en hjelpsom norsk juridisk assistent for privatpersoner.
-Forklar relevante lover på enkelt, forståelig norsk.
-Alltid avslutt med: "Dette er generell informasjon. Kontakt advokat for konkret rådgivning."
+    const svar = await kallClaude(
+      `Du er en hjelpsom norsk juridisk assistent for privatpersoner.
+Bruk informasjonen fra Stortingets saksregister til å forklare relevant lovgivning på enkelt norsk.
+Nevn gjerne hvilke lover som er aktuelle (f.eks. arbeidsmiljøloven, husleieloven osv.) selv om du ikke har full lovtekst.
+Avslutt alltid med: "Dette er generell informasjon. Kontakt advokat for konkret rådgivning."
 Svar på norsk bokmål.`,
-        messages: [
-          {
-            role: "user",
-            content: `Spørsmål: ${sporsmal}\n\nRelevante lovtekster:\n${kontekst}`,
-          },
-        ],
-      },
-      {
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json",
-        },
-      }
+      `Spørsmål: ${sporsmal}\n\nRelevante saker fra Stortinget:\n${kontekst}`,
+      900
     );
 
-    // Steg 5: Returner samlet svar til appen
-    return res.json({
-      svar: forklaring.data.content[0].text,
-      nokkelord,
-      lover: lover.map((l) => ({
-        tittel: l.title,
-        refId: l.refId,
-        url: `https://lovdata.no/dokument/${l.refId}`,
-      })),
-    });
+    return res.json({ svar, nokkelord, saker });
+
   } catch (err) {
     console.error("Feil:", err.response?.data || err.message);
-    return res.status(500).json({
-      feil: "Noe gikk galt. Prøv igjen.",
-      detaljer: err.message,
-    });
-  }
-});
-
-// ------------------------------------------------------------
-// GET /api/lov/:refId
-// Henter full lovtekst for en spesifikk lov
-// Eksempel: GET /api/lov/lov%2F2005-06-17-62  (arbeidsmiljøloven)
-// ------------------------------------------------------------
-app.get("/api/lov/:refId", async (req, res) => {
-  const refId = decodeURIComponent(req.params.refId);
-  try {
-    const svar = await lovdata.get("/renderRefID", {
-      params: { refID: refId },
-    });
-    return res.json(svar.data);
-  } catch (err) {
-    return res.status(500).json({ feil: "Kunne ikke hente lovtekst." });
+    return res.status(500).json({ feil: "Noe gikk galt.", detaljer: err.message });
   }
 });
 
 // ------------------------------------------------------------
 // GET /api/sok?q=arbeidsmiljø
-// Direkte søk i Lovdata uten AI-tolkning
 // ------------------------------------------------------------
 app.get("/api/sok", async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ feil: "Søkeord mangler." });
-
   try {
-    const svar = await lovdata.get("/v1/search", {
-      params: { q, max: 10 },
-    });
-    return res.json(svar.data);
+    const saker = await sokStortinget(q);
+    return res.json({ saker });
   } catch (err) {
-    return res.status(500).json({ feil: "Søk feilet." });
+    return res.status(500).json({ feil: "Søk feilet.", detaljer: err.message });
   }
 });
 
@@ -188,7 +157,7 @@ app.get("/api/sok", async (req, res) => {
 // Helsesjekk
 // ------------------------------------------------------------
 app.get("/", (req, res) => {
-  res.json({ status: "ok", melding: "Lovassistent API kjører" });
+  res.json({ status: "ok", melding: "Lovassistent API kjører (Stortinget + Claude)" });
 });
 
 app.listen(PORT, () => {
