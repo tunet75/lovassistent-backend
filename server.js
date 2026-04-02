@@ -121,17 +121,43 @@ app.post("/api/spor", async (req, res) => {
       ? saker.map(s => `- ${s.tittel} (${s.sesjon}, status: ${s.status})`).join("\n")
       : "Ingen direkte saker funnet i Stortingets database.";
 
-    const svar = await kallClaude(
+    const raaRespons = await kallClaude(
       `Du er en hjelpsom norsk juridisk assistent for privatpersoner.
 Bruk informasjonen fra Stortingets saksregister til å forklare relevant lovgivning på enkelt norsk.
-Nevn gjerne hvilke lover som er aktuelle (f.eks. arbeidsmiljøloven, husleieloven osv.) selv om du ikke har full lovtekst.
 Avslutt alltid med: "Dette er generell informasjon. Kontakt advokat for konkret rådgivning."
-Svar på norsk bokmål.`,
+Svar på norsk bokmål.
+
+Etter selve svaret, legg til en linje som starter med PARAGRAFER: og list opp konkrete paragrafhenvisninger i dette formatet:
+PARAGRAFER: lovnavn|paragraf|lovdata-id, lovnavn|paragraf|lovdata-id
+
+Eksempel:
+PARAGRAFER: Arbeidsmiljøloven|§ 15-8|lov/2005-06-17-62/%C2%A715-8, Husleieloven|§ 9-5|lov/1999-03-26-17/%C2%A79-5
+
+Hvis ingen konkrete paragrafer er aktuelle, skriv:
+PARAGRAFER: ingen`,
       `Spørsmål: ${sporsmal}\n\nRelevante saker fra Stortinget:\n${kontekst}`,
-      900
+      1000
     );
 
-    return res.json({ svar, nokkelord, saker });
+    // Splitt svar og paragraflinjen
+    const paragraflinje = raaRespons.match(/PARAGRAFER:\s*(.+)/)?.[1]?.trim() || "";
+    const svar = raaRespons.replace(/PARAGRAFER:.*$/s, "").trim();
+
+    // Parse paragrafene til strukturert data med Lovdata-lenker
+    const paragrafer = paragraflinje === "ingen" || !paragraflinje
+      ? []
+      : paragraflinje.split(",").map(p => {
+          const deler = p.trim().split("|");
+          if (deler.length < 3) return null;
+          const [lovnavn, paragraf, lovdataId] = deler.map(d => d.trim());
+          return {
+            lovnavn,
+            paragraf,
+            url: `https://lovdata.no/dokument/${lovdataId}`,
+          };
+        }).filter(Boolean);
+
+    return res.json({ svar, nokkelord, saker, paragrafer });
 
   } catch (err) {
     console.error("Feil:", err.response?.data || err.message);
