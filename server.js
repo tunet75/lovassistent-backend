@@ -3,14 +3,14 @@ import axios from "axios";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createWriteStream, mkdirSync } from "fs";
-import { readFile } from "fs/promises";
+import { readFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { pipeline } from "stream/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { createBrotliDecompress } from "zlib";
 import { DOMParser } from "@xmldom/xmldom";
 import tar from "tar";
+import unbzip2 from "unbzip2-stream";
 
 dotenv.config();
 
@@ -49,14 +49,20 @@ async function lastNedLovdata() {
     const tarPath = join(LOVDATA_DIR, "gjeldende-lover.tar.bz2");
     const utpakketDir = join(LOVDATA_DIR, "lover");
 
-    // Last ned tar.bz2
-    const respons = await axios.get(LOVDATA_URL, { responseType: "stream", timeout: 60000 });
-    await pipeline(respons.data, createWriteStream(tarPath));
-    console.log("Nedlasting ferdig, pakker ut...");
-
-    indeksStatus = "pakker ut lovfiler...";
+    // Last ned og pakk ut direkte via stream (ingen bzip2 på Railway)
     mkdirSync(utpakketDir, { recursive: true });
-    await tar.x({ file: tarPath, cwd: utpakketDir, brotli: false });
+    const respons = await axios.get(LOVDATA_URL, { responseType: "stream", timeout: 120000 });
+
+    await new Promise((resolve, reject) => {
+      const extract = tar.extract({ cwd: utpakketDir });
+      extract.on("finish", resolve);
+      extract.on("error", reject);
+      respons.data
+        .on("error", reject)
+        .pipe(unbzip2())
+        .on("error", reject)
+        .pipe(extract);
+    });
     console.log("Utpakking ferdig, bygger indeks...");
 
     indeksStatus = "bygger søkeindeks...";
