@@ -295,7 +295,8 @@ Hvis ingen: PARAGRAFER: ingen`,
           const deler = p.trim().split("|");
           if (deler.length < 3) return null;
           const [lovnavn, paragraf, lovdataId] = deler.map(d => d.trim());
-          return { lovnavn, paragraf, url: `https://lovdata.no/dokument/${lovdataId}` };
+          const renUrl = lovdataId.replace(/%C2%A7/g, '§').replace(/%C2%a7/g, '§');
+          return { lovnavn, paragraf, url: `https://lovdata.no/${renUrl}` };
         }).filter(Boolean);
 
     return res.json({ svar, nokkelord, saker, paragrafer, lovdataKlar: indeksKlar });
