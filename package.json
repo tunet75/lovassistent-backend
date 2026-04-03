@@ -1,7 +1,7 @@
 {
   "name": "lovassistent-backend",
-  "version": "2.0.0",
-  "description": "Backend for norsk lovassistent-app (Stortinget + Claude)",
+  "version": "3.0.0",
+  "description": "Backend for norsk lovassistent-app (Lovdata + Stortinget + Claude)",
   "type": "module",
   "main": "server.js",
   "scripts": {
