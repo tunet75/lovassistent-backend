@@ -321,6 +321,17 @@ app.get("/api/status", (req, res) => {
 });
 
 // ------------------------------------------------------------
+// Debug – vis mappestruktur
+app.get("/api/debug", async (req, res) => {
+  try {
+    const ex = promisify(exec);
+    const { stdout } = await ex("find /tmp/lovdata -type f | head -30");
+    res.json({ filer: stdout.trim().split("\n") });
+  } catch(e) {
+    res.json({ feil: e.message });
+  }
+});
+
 // Helsesjekk
 // ------------------------------------------------------------
 app.get("/", (req, res) => {
