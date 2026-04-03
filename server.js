@@ -2,13 +2,15 @@ import express from "express";
 import axios from "axios";
 import cors from "cors";
 import dotenv from "dotenv";
-import { createWriteStream, existsSync, mkdirSync } from "fs";
-import { readFile, readdir } from "fs/promises";
+import { createWriteStream, mkdirSync } from "fs";
+import { readFile } from "fs/promises";
 import { join } from "path";
 import { pipeline } from "stream/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { createBrotliDecompress } from "zlib";
 import { DOMParser } from "@xmldom/xmldom";
+import tar from "tar";
 
 dotenv.config();
 
@@ -54,7 +56,7 @@ async function lastNedLovdata() {
 
     indeksStatus = "pakker ut lovfiler...";
     mkdirSync(utpakketDir, { recursive: true });
-    await execAsync(`tar -xjf ${tarPath} -C ${utpakketDir}`);
+    await tar.x({ file: tarPath, cwd: utpakketDir, brotli: false });
     console.log("Utpakking ferdig, bygger indeks...");
 
     indeksStatus = "bygger søkeindeks...";
@@ -109,8 +111,20 @@ async function byggIndeks(dir) {
 }
 
 async function finnXmlFiler(dir) {
-  const { stdout } = await execAsync(`find ${dir} -name "*.xml" -type f`);
-  return stdout.trim().split("\n").filter(Boolean);
+  const filer = [];
+  async function scan(d) {
+    try {
+      const { readdir } = await import("fs/promises");
+      const entries = await readdir(d, { withFileTypes: true });
+      for (const e of entries) {
+        const full = join(d, e.name);
+        if (e.isDirectory()) await scan(full);
+        else if (e.name.endsWith(".xml")) filer.push(full);
+      }
+    } catch(e) {}
+  }
+  await scan(dir);
+  return filer;
 }
 
 function hentLovId(filsti) {
