@@ -25,7 +25,7 @@ app.options("*", cors());
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const LOVDATA_DIR = "/tmp/lovdata";
-const LOVDATA_URL = "https://api.lovdata.no/dataset/gjeldende-lover";
+const LOVDATA_URL = "https://api.lovdata.no/publicData/gjeldende-lover.tar.bz2";
 
 // ------------------------------------------------------------
 // In-memory indeks over lovtekster
