@@ -134,10 +134,10 @@ async function finnXmlFiler(dir) {
 }
 
 function hentLovId(filsti) {
-  const match = filsti.match(/([A-Z]{2}-\d{4}-\d{2}-\d{2}-\d+)/);
+  // Format: nl-YYYYMMDD-NNN.xml
+  const match = filsti.match(/nl-(\d{4})(\d{2})(\d{2})-(\d+)\.xml/);
   if (!match) return "";
-  const deler = match[1].split("-");
-  return `lov/${deler[1]}-${deler[2]}-${deler[3]}-${deler[4]}`;
+  return `lov/${match[1]}-${match[2]}-${match[3]}-${match[4]}`;
 }
 
 // ------------------------------------------------------------
