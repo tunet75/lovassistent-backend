@@ -8,7 +8,7 @@ import { join } from "path";
 import { pipeline } from "stream/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { DOMParser } from "@xmldom/xmldom";
+import { parse as parseHtml } from "node-html-parser";
 import tar from "tar";
 import unbzip2 from "unbzip2-stream";
 
@@ -82,17 +82,16 @@ async function lastNedLovdata() {
 // ------------------------------------------------------------
 async function byggIndeks(dir) {
   const filer = await finnXmlFiler(dir);
-  const parser = new DOMParser();
 
   for (const fil of filer.slice(0, 2000)) {
     try {
       const innhold = await readFile(fil, "utf-8");
-      const doc = parser.parseFromString(innhold, "text/xml");
+      const doc = parseHtml(innhold);
 
-      // Hent lovtittel
-      const tittelNode = doc.getElementsByTagName("kortTittel")[0]
-        || doc.getElementsByTagName("tittel")[0];
-      const tittel = tittelNode?.textContent?.trim() || "";
+      // Hent lovtittel fra <title> eller <dd class="titleShort">
+      const kortTittelNode = doc.querySelector("dd.titleShort");
+      const tittelNode = doc.querySelector("title");
+      const tittel = kortTittelNode?.text?.trim() || tittelNode?.text?.trim() || "";
       if (!tittel) continue;
 
       const lovId = hentLovId(fil);
@@ -100,14 +99,27 @@ async function byggIndeks(dir) {
 
       if (!lovIndeks[nokkel]) lovIndeks[nokkel] = { tittel, lovId, paragrafer: [] };
 
-      // Hent paragrafer
-      const paragrafNoder = doc.getElementsByTagName("paragraf");
-      for (let i = 0; i < paragrafNoder.length; i++) {
-        const node = paragrafNoder[i];
-        const nr = node.getAttribute("id") || node.getElementsByTagName("nr")?.[0]?.textContent || "";
-        const tekst = node.textContent?.replace(/\s+/g, " ").trim().slice(0, 500) || "";
-        if (nr && tekst) {
-          lovIndeks[nokkel].paragrafer.push({ nr, tekst });
+      // Hent paragrafer fra <article class="legalArticle">
+      const artikler = doc.querySelectorAll("article.legalArticle");
+      for (const artikkel of artikler) {
+        // Paragrafnummer fra data-name eller span.legalArticleValue
+        const dataNavn = artikkel.getAttribute("data-name") || "";
+        const spanVerdi = artikkel.querySelector("span.legalArticleValue");
+        const nr = dataNavn || spanVerdi?.text?.trim() || "";
+
+        // Tittel fra span.legalArticleTitle
+        const artikkelTittel = artikkel.querySelector("span.legalArticleTitle")?.text?.trim() || "";
+
+        // Tekst fra første ledd
+        const leddTekst = artikkel.querySelector("article.legalP, article.numberedLegalP")
+          ?.text?.replace(/\s+/g, " ").trim().slice(0, 400) || "";
+
+        if (nr) {
+          lovIndeks[nokkel].paragrafer.push({
+            nr,
+            tittel: artikkelTittel,
+            tekst: leddTekst,
+          });
         }
       }
     } catch (e) {
@@ -321,6 +333,18 @@ app.get("/api/status", (req, res) => {
 });
 
 // ------------------------------------------------------------
+// Debug – vis innhold i én XML-fil
+app.get("/api/debug/xml", async (req, res) => {
+  try {
+    const fil = "/tmp/lovdata/lover/nl/nl-20190614-021.xml";
+    const { readFile } = await import("fs/promises");
+    const innhold = await readFile(fil, "utf-8");
+    res.send("<pre>" + innhold.slice(0, 3000).replace(/</g, "&lt;") + "</pre>");
+  } catch(e) {
+    res.json({ feil: e.message });
+  }
+});
+
 // Debug – vis mappestruktur
 app.get("/api/debug", async (req, res) => {
   try {
