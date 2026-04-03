@@ -127,11 +127,22 @@ Bruk informasjonen fra Stortingets saksregister til å forklare relevant lovgivn
 Avslutt alltid med: "Dette er generell informasjon. Kontakt advokat for konkret rådgivning."
 Svar på norsk bokmål.
 
+VIKTIG – bruk alltid disse oppdaterte lovene og paragrafnumrene (ikke eldre versjoner):
+- Arveloven: Lov av 14. juni 2019 nr. 21 (i kraft 1. januar 2021). Lovdata-id: lov/2019-06-14-21
+  - § 2: Livsarvingers arverett (barn arver likt uavhengig av om foreldrene var gift)
+  - § 3: Ektefelles arverett
+  - § 4: Representasjonsarv (barnebarn trer inn i avdødt barns sted)
+  - § 6: Arverekkefølge (klasser)
+  - § 42: Testamentets form
+- Arbeidsmiljøloven: lov/2005-06-17-62
+- Husleieloven: lov/1999-03-26-17
+- Forbrukerkjøpsloven: lov/2002-06-21-34
+
 Etter selve svaret, legg til en linje som starter med PARAGRAFER: og list opp konkrete paragrafhenvisninger i dette formatet:
-PARAGRAFER: lovnavn|paragraf|lovdata-id, lovnavn|paragraf|lovdata-id
+PARAGRAFER: lovnavn|paragraf|lovdata-id/paragraf-id, lovnavn|paragraf|lovdata-id/paragraf-id
 
 Eksempel:
-PARAGRAFER: Arbeidsmiljøloven|§ 15-8|lov/2005-06-17-62/%C2%A715-8, Husleieloven|§ 9-5|lov/1999-03-26-17/%C2%A79-5
+PARAGRAFER: Arveloven|§ 4|lov/2019-06-14-21/%C2%A74, Arveloven|§ 2|lov/2019-06-14-21/%C2%A72
 
 Hvis ingen konkrete paragrafer er aktuelle, skriv:
 PARAGRAFER: ingen`,
