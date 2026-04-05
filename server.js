@@ -1,4 +1,5 @@
 import express from "express";
+import Stripe from "stripe";
 import axios from "axios";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -26,6 +27,12 @@ app.options("*", cors());
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
+
+// Premium-brukere lagret i minnet (enhetId -> true)
+const premiumBrukere = new Set();
 
 // ------------------------------------------------------------
 // Freemium: spørsmålstelling per enhet per dag
@@ -51,7 +58,7 @@ function inkrementerKvote(enhetId) {
 }
 
 function erPremium(enhetId) {
-  return process.env[`PREMIUM_${enhetId}`] === "true";
+  return premiumBrukere.has(enhetId) || process.env[`PREMIUM_${enhetId}`] === "true";
 }
 const LOVDATA_DIR = "/tmp/lovdata";
 const LOVDATA_URL = "https://api.lovdata.no/v1/publicData/get/gjeldende-lover.tar.bz2";
@@ -410,6 +417,57 @@ app.get("/api/kvote", (req, res) => {
     grense: GRATIS_GRENSE,
     gjenstaar: premium ? null : Math.max(0, GRATIS_GRENSE - brukt),
   });
+});
+
+// POST /api/opprett-abonnement – lag Stripe Checkout session
+app.post("/api/opprett-abonnement", async (req, res) => {
+  const { enhetId } = req.body;
+  if (!enhetId) return res.status(400).json({ feil: "enhetId mangler" });
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      payment_method_types: ["card"],
+      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+      success_url: `https://symphonious-cupcake-20db47.netlify.app/?premium=true&enhetId=${enhetId}`,
+      cancel_url: `https://symphonious-cupcake-20db47.netlify.app/?avbrutt=true`,
+      metadata: { enhetId },
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("Stripe feil:", err.message);
+    res.status(500).json({ feil: "Kunne ikke opprette betalingsside." });
+  }
+});
+
+// POST /api/stripe-webhook – motta betalingsbekreftelse fra Stripe
+app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), (req, res) => {
+  let event;
+  try {
+    event = STRIPE_WEBHOOK_SECRET
+      ? stripe.webhooks.constructEvent(req.body, req.headers["stripe-signature"], STRIPE_WEBHOOK_SECRET)
+      : JSON.parse(req.body);
+  } catch (err) {
+    return res.status(400).json({ feil: "Webhook feil: " + err.message });
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const enhetId = event.data.object.metadata?.enhetId;
+    if (enhetId) {
+      premiumBrukere.add(enhetId);
+      console.log("Premium aktivert for:", enhetId);
+    }
+  }
+
+  if (event.type === "customer.subscription.deleted") {
+    const enhetId = event.data.object.metadata?.enhetId;
+    if (enhetId) {
+      premiumBrukere.delete(enhetId);
+      console.log("Premium avsluttet for:", enhetId);
+    }
+  }
+
+  res.json({ mottatt: true });
 });
 
 // Helsesjekk

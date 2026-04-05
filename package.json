@@ -15,6 +15,7 @@
     "dotenv": "^16.4.0",
     "express": "^4.19.0",
     "tar": "^6.2.0",
-    "unbzip2-stream": "^1.4.3"
+    "unbzip2-stream": "^1.4.3",
+    "stripe": "^14.0.0"
   }
 }
