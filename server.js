@@ -425,6 +425,8 @@ app.post("/api/opprett-abonnement", async (req, res) => {
   if (!enhetId) return res.status(400).json({ feil: "enhetId mangler" });
 
   try {
+    console.log("STRIPE_PRICE_ID:", STRIPE_PRICE_ID);
+    console.log("STRIPE_SECRET_KEY satt:", !!process.env.STRIPE_SECRET_KEY);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
