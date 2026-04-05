@@ -26,6 +26,33 @@ app.options("*", cors());
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
+// ------------------------------------------------------------
+// Freemium: spørsmålstelling per enhet per dag
+// ------------------------------------------------------------
+const GRATIS_GRENSE = 3;
+const kvoter = new Map(); // { "enhetId_dato": antall }
+
+function getDatoNokkel(enhetId) {
+  const dato = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  return `${enhetId}_${dato}`;
+}
+
+function sjekkKvote(enhetId) {
+  const nokkel = getDatoNokkel(enhetId);
+  return kvoter.get(nokkel) || 0;
+}
+
+function inkrementerKvote(enhetId) {
+  const nokkel = getDatoNokkel(enhetId);
+  const antall = (kvoter.get(nokkel) || 0) + 1;
+  kvoter.set(nokkel, antall);
+  return antall;
+}
+
+function erPremium(enhetId) {
+  return process.env[`PREMIUM_${enhetId}`] === "true";
+}
 const LOVDATA_DIR = "/tmp/lovdata";
 const LOVDATA_URL = "https://api.lovdata.no/v1/publicData/get/gjeldende-lover.tar.bz2";
 
@@ -223,9 +250,24 @@ async function kallClaude(system, bruker, maxTokens = 300) {
 // POST /api/spor
 // ------------------------------------------------------------
 app.post("/api/spor", async (req, res) => {
-  const { sporsmal } = req.body;
+  const { sporsmal, enhetId } = req.body;
   if (!sporsmal || sporsmal.trim().length < 3) {
     return res.status(400).json({ feil: "Spørsmål mangler eller er for kort." });
+  }
+
+  // Sjekk kvote
+  const id = enhetId || "anonym";
+  if (!erPremium(id)) {
+    const brukt = sjekkKvote(id);
+    if (brukt >= GRATIS_GRENSE) {
+      return res.status(429).json({
+        feil: "kvote_brukt",
+        melding: `Du har brukt dine ${GRATIS_GRENSE} gratis spørsmål i dag. Kom tilbake i morgen eller oppgrader til Premium for ubegrenset tilgang.`,
+        brukt,
+        grense: GRATIS_GRENSE,
+      });
+    }
+    inkrementerKvote(id);
   }
 
   try {
@@ -355,6 +397,19 @@ app.get("/api/debug", async (req, res) => {
   } catch(e) {
     res.json({ feil: e.message });
   }
+});
+
+// GET /api/kvote?enhetId=xxx – sjekk gjenværende spørsmål
+app.get("/api/kvote", (req, res) => {
+  const enhetId = req.query.enhetId || "anonym";
+  const brukt = sjekkKvote(enhetId);
+  const premium = erPremium(enhetId);
+  res.json({
+    premium,
+    brukt,
+    grense: GRATIS_GRENSE,
+    gjenstaar: premium ? null : Math.max(0, GRATIS_GRENSE - brukt),
+  });
 });
 
 // Helsesjekk

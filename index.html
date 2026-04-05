@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Lovassistent" />
+  <title>Norsk Lovassistent</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f0; min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
+    .app { max-width: 480px; margin: 0 auto; padding: 1rem; }
+    .header { display: flex; align-items: center; gap: 12px; margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 0.5px solid #e0dfd8; }
+    .logo { width: 40px; height: 40px; border-radius: 10px; background: #185FA5; display: flex; align-items: center; justify-content: center; color: #E6F1FB; font-size: 22px; font-weight: 600; flex-shrink: 0; }
+    .header h1 { font-size: 16px; font-weight: 600; color: #1a1a18; }
+    .header p { font-size: 12px; color: #888780; margin-top: 1px; }
+    .search-box { background: #fff; border: 0.5px solid #d3d1c7; border-radius: 14px; padding: 1rem; margin-bottom: 0.75rem; }
+    label { font-size: 13px; color: #888780; display: block; margin-bottom: 6px; }
+    textarea { width: 100%; border: 0.5px solid #d3d1c7; border-radius: 8px; padding: 10px; font-size: 15px; font-family: inherit; color: #1a1a18; background: #f5f5f0; resize: none; line-height: 1.5; }
+    textarea:focus { outline: none; border-color: #185FA5; }
+    .search-btn { width: 100%; margin-top: 10px; padding: 13px; background: #185FA5; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .search-btn:active { background: #0C447C; transform: scale(0.98); }
+    .search-btn:disabled { background: #d3d1c7; color: #888780; cursor: default; transform: none; }
+    .chips-row { margin-bottom: 1rem; }
+    .chips-row p { font-size: 12px; color: #888780; margin-bottom: 6px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { font-size: 13px; padding: 5px 12px; border-radius: 20px; border: 0.5px solid #d3d1c7; color: #5f5e5a; background: #fff; cursor: pointer; }
+    .chip:active { background: #f0efea; }
+    .results { display: flex; flex-direction: column; gap: 10px; }
+    .ai-card { background: #fff; border: 0.5px solid #d3d1c7; border-radius: 14px; padding: 1.25rem; }
+    .ai-badge { font-size: 11px; font-weight: 600; color: #0F6E56; background: #E1F5EE; padding: 3px 9px; border-radius: 12px; display: inline-block; margin-bottom: 10px; }
+    .ai-text { font-size: 15px; color: #1a1a18; line-height: 1.7; }
+    .keywords { font-size: 12px; color: #b4b2a9; margin-top: 10px; }
+    .section-label { font-size: 12px; font-weight: 600; color: #888780; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .law-card { background: #fff; border: 0.5px solid #d3d1c7; border-radius: 14px; padding: 1rem; }
+    .law-tag { font-size: 11px; font-weight: 600; background: #B5D4F4; color: #0C447C; padding: 3px 9px; border-radius: 12px; display: inline-block; margin-bottom: 7px; }
+    .law-card h3 { font-size: 14px; font-weight: 600; color: #1a1a18; margin-bottom: 5px; }
+    .law-card a { font-size: 13px; color: #185FA5; text-decoration: none; }
+    .loader { text-align: center; padding: 2.5rem 1rem; color: #888780; font-size: 14px; }
+    .spinner { width: 24px; height: 24px; border: 2px solid #d3d1c7; border-top-color: #185FA5; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty { text-align: center; padding: 2.5rem 1rem; color: #b4b2a9; font-size: 14px; line-height: 1.7; }
+    .error-box { background: #FCEBEB; border: 0.5px solid #F09595; border-radius: 10px; padding: 14px; font-size: 13px; color: #791F1F; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="logo">§</div>
+      <div>
+        <h1>Norsk Lovassistent</h1>
+        <p>AI-drevet søk i norsk lovgivning</p>
+      </div>
+    </div>
+
+    <div class="search-box">
+      <label>Beskriv din situasjon</label>
+      <textarea id="query" rows="3" placeholder="Eks: Kan sjefen min nekte meg ferie i juli?"></textarea>
+      <button class="search-btn" id="searchBtn" onclick="doSearch()">Spør lovassistenten</button>
+    </div>
+
+    <div class="chips-row">
+      <p>Hurtigeksempler:</p>
+      <div class="chips">
+        <span class="chip" onclick="setQ(this)">Oppsigelse under sykmelding</span>
+        <span class="chip" onclick="setQ(this)">Husleie og depositum</span>
+        <span class="chip" onclick="setQ(this)">Forbrukerkjøp og reklamasjon</span>
+        <span class="chip" onclick="setQ(this)">Arv uten testament</span>
+      </div>
+    </div>
+
+    <div id="kvote-bar" style="font-size:12px;color:#888780;text-align:right;margin-bottom:8px;"></div>
+    <div id="results">
+      <div class="empty">Skriv inn en situasjon og trykk søk.</div>
+    </div>
+  </div>
+
+  <script>
+    const BACKEND = "https://lovassistent-backend-production.up.railway.app";
+
+    // Generer eller hent unik enhets-ID
+    var enhetId = localStorage.getItem('enhetId');
+    if (!enhetId) {
+      enhetId = 'enhet_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+      localStorage.setItem('enhetId', enhetId);
+    }
+
+    function oppdaterKvoteBar() {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', BACKEND + '/api/kvote?enhetId=' + enhetId);
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          var data = JSON.parse(xhr.responseText);
+          var bar = document.getElementById('kvote-bar');
+          if (data.premium) {
+            bar.innerHTML = '✓ Premium – ubegrenset tilgang';
+            bar.style.color = '#0F6E56';
+          } else {
+            bar.innerHTML = data.gjenstaar + ' av ' + data.grense + ' gratis spørsmål gjenstår i dag';
+            bar.style.color = data.gjenstaar === 0 ? '#A32D2D' : '#888780';
+          }
+        }
+      };
+      xhr.send();
+    }
+
+    function setQ(el) {
+      document.getElementById('query').value = el.textContent;
+    }
+
+    function doSearch() {
+      var q = document.getElementById('query').value.trim();
+      if (!q) return;
+
+      var btn = document.getElementById('searchBtn');
+      btn.disabled = true;
+      btn.textContent = 'Søker...';
+      document.getElementById('results').innerHTML = '<div class="loader"><div class="spinner"></div>Søker i norsk lovgivning...</div>';
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', BACKEND + '/api/spor');
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.onload = function() {
+        btn.disabled = false;
+        btn.textContent = 'Spør lovassistenten';
+        oppdaterKvoteBar();
+
+        if (xhr.status === 429) {
+          var err = JSON.parse(xhr.responseText);
+          document.getElementById('results').innerHTML =
+            '<div class="error-box" style="text-align:center;">' +
+            '<strong>Daglig grense nådd</strong><br><br>' +
+            err.melding +
+            '<br><br><button class="search-btn" style="margin-top:8px;" onclick="visOppgrader()">Oppgrader til Premium – 49 kr/mnd</button>' +
+            '</div>';
+          return;
+        }
+
+        if (xhr.status !== 200) {
+          document.getElementById('results').innerHTML = '<div class="error-box"><strong>Feil:</strong> HTTP ' + xhr.status + '</div>';
+          return;
+        }
+
+        var data = JSON.parse(xhr.responseText);
+        var html = '';
+
+        if (data.svar) {
+          html += '<div class="ai-card"><span class="ai-badge">AI-svar</span><div class="ai-text">' + data.svar.replace(/\n/g, '<br>') + '</div>' + (data.nokkelord ? '<div class="keywords">Søkte på: ' + data.nokkelord + '</div>' : '') + '</div>';
+        }
+
+        if (data.paragrafer && data.paragrafer.length > 0) {
+          html += '<div class="section-label" style="margin-top:10px;">Relevante paragrafer</div>';
+          data.paragrafer.forEach(function(p) {
+            html += '<div class="law-card"><span class="law-tag">' + p.paragraf + '</span><h3>' + p.lovnavn + '</h3><a href="' + p.url + '" target="_blank">Les paragrafen på Lovdata.no →</a></div>';
+          });
+        } else if (data.saker && data.saker.length > 0) {
+          html += '<div class="section-label" style="margin-top:10px;">Relaterte saker</div>';
+          data.saker.forEach(function(s) {
+            html += '<div class="law-card"><span class="law-tag">' + s.sesjon + '</span><h3>' + s.tittel + '</h3><a href="' + s.url + '" target="_blank">Se sak på Stortinget.no →</a></div>';
+          });
+        }
+
+        document.getElementById('results').innerHTML = html || '<div class="empty">Ingen resultater funnet.</div>';
+      };
+      xhr.onerror = function() {
+        btn.disabled = false;
+        btn.textContent = 'Spør lovassistenten';
+        document.getElementById('results').innerHTML = '<div class="error-box"><strong>Feil:</strong> Kunne ikke koble til server.</div>';
+      };
+      xhr.send(JSON.stringify({ sporsmal: q, enhetId: enhetId }));
+    }
+
+    function visOppgrader() {
+      alert('Betalingsløsning kommer snart! Ta kontakt på kontakt@lovassistent.no for tidlig tilgang.');
+    }
+
+    document.getElementById('query').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSearch(); }
+    });
+
+    oppdaterKvoteBar();
+  </script>
+</body>
+</html>
