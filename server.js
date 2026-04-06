@@ -445,10 +445,10 @@ app.get("/api/debug", async (req, res) => {
 });
 
 // GET /api/kvote?enhetId=xxx – sjekk gjenværende spørsmål
-app.get("/api/kvote", (req, res) => {
+app.get("/api/kvote", async (req, res) => {
   const enhetId = req.query.enhetId || "anonym";
   const brukt = sjekkKvote(enhetId);
-  const premium = erPremium(enhetId);
+  const premium = await erPremium(enhetId);
   res.json({
     premium,
     brukt,
