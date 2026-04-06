@@ -1,5 +1,6 @@
 import express from "express";
 import Stripe from "stripe";
+import pg from "pg";
 import axios from "axios";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -16,6 +17,37 @@ import unbzip2 from "unbzip2-stream";
 dotenv.config();
 
 const execAsync = promisify(exec);
+
+// ------------------------------------------------------------
+// PostgreSQL database
+// ------------------------------------------------------------
+const { Pool } = pg;
+const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+async function opprettTabeller() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS premium_brukere (
+      enhet_id TEXT PRIMARY KEY,
+      aktiv BOOLEAN DEFAULT true,
+      opprettet TIMESTAMPTZ DEFAULT NOW(),
+      stripe_kunde_id TEXT
+    )
+  `);
+  console.log("Database klar");
+}
+
+async function erPremiumDB(enhetId) {
+  const res = await db.query("SELECT aktiv FROM premium_brukere WHERE enhet_id = $1", [enhetId]);
+  return res.rows.length > 0 && res.rows[0].aktiv;
+}
+
+async function settPremium(enhetId, aktiv, stripeKundeId = null) {
+  await db.query(`
+    INSERT INTO premium_brukere (enhet_id, aktiv, stripe_kunde_id)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (enhet_id) DO UPDATE SET aktiv = $2, stripe_kunde_id = COALESCE($3, premium_brukere.stripe_kunde_id)
+  `, [enhetId, aktiv, stripeKundeId]);
+}
 const app = express();
 app.use(express.json());
 app.use(cors({
@@ -57,8 +89,14 @@ function inkrementerKvote(enhetId) {
   return antall;
 }
 
-function erPremium(enhetId) {
-  return premiumBrukere.has(enhetId) || process.env[`PREMIUM_${enhetId}`] === "true";
+async function erPremium(enhetId) {
+  if (premiumBrukere.has(enhetId)) return true;
+  if (process.env[`PREMIUM_${enhetId}`] === "true") return true;
+  try {
+    return await erPremiumDB(enhetId);
+  } catch(e) {
+    return false;
+  }
 }
 const LOVDATA_DIR = "/tmp/lovdata";
 const LOVDATA_URL = "https://api.lovdata.no/v1/publicData/get/gjeldende-lover.tar.bz2";
@@ -264,7 +302,7 @@ app.post("/api/spor", async (req, res) => {
 
   // Sjekk kvote
   const id = enhetId || "anonym";
-  if (!erPremium(id)) {
+  if (!await erPremium(id)) {
     const brukt = sjekkKvote(id);
     if (brukt >= GRATIS_GRENSE) {
       return res.status(429).json({
@@ -455,8 +493,10 @@ app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), (req,
 
   if (event.type === "checkout.session.completed") {
     const enhetId = event.data.object.metadata?.enhetId;
+    const stripeKundeId = event.data.object.customer;
     if (enhetId) {
       premiumBrukere.add(enhetId);
+      await settPremium(enhetId, true, stripeKundeId);
       console.log("Premium aktivert for:", enhetId);
     }
   }
@@ -465,6 +505,7 @@ app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), (req,
     const enhetId = event.data.object.metadata?.enhetId;
     if (enhetId) {
       premiumBrukere.delete(enhetId);
+      await settPremium(enhetId, false);
       console.log("Premium avsluttet for:", enhetId);
     }
   }
@@ -485,7 +526,15 @@ app.get("/", (req, res) => {
 // ------------------------------------------------------------
 // Start server og last ned Lovdata i bakgrunnen
 // ------------------------------------------------------------
-app.listen(PORT, () => {
-  console.log(`Server kjører på port ${PORT}`);
-  lastNedLovdata(); // starter i bakgrunnen, blokkerer ikke
+opprettTabeller().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server kjører på port ${PORT}`);
+    lastNedLovdata();
+  });
+}).catch(err => {
+  console.error("Database feil:", err.message);
+  app.listen(PORT, () => {
+    console.log(`Server kjører på port ${PORT} (uten database)`);
+    lastNedLovdata();
+  });
 });
