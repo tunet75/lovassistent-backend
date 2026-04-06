@@ -49,7 +49,13 @@ async function settPremium(enhetId, aktiv, stripeKundeId = null) {
   `, [enhetId, aktiv, stripeKundeId]);
 }
 const app = express();
-app.use(express.json());
+app.use((req, res, next) => {
+  if (req.path === "/api/stripe-webhook") {
+    express.raw({ type: "application/json" })(req, res, next);
+  } else {
+    express.json()(req, res, next);
+  }
+});
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "OPTIONS"],
@@ -481,7 +487,7 @@ app.post("/api/opprett-abonnement", async (req, res) => {
 });
 
 // POST /api/stripe-webhook – motta betalingsbekreftelse fra Stripe
-app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async (req, res) => {
+app.post("/api/stripe-webhook", async (req, res) => {
   let event;
   try {
     event = STRIPE_WEBHOOK_SECRET
