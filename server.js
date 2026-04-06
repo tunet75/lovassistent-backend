@@ -481,7 +481,7 @@ app.post("/api/opprett-abonnement", async (req, res) => {
 });
 
 // POST /api/stripe-webhook – motta betalingsbekreftelse fra Stripe
-app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), (req, res) => {
+app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async (req, res) => {
   let event;
   try {
     event = STRIPE_WEBHOOK_SECRET
