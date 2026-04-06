@@ -75,7 +75,7 @@ const premiumBrukere = new Set();
 // ------------------------------------------------------------
 // Freemium: spørsmålstelling per enhet per dag
 // ------------------------------------------------------------
-const GRATIS_GRENSE = 2;
+const GRATIS_GRENSE = 3;
 const kvoter = new Map(); // { "enhetId_dato": antall }
 
 function getDatoNokkel(enhetId) {
@@ -461,6 +461,53 @@ app.get("/api/kvote", async (req, res) => {
     grense: GRATIS_GRENSE,
     gjenstaar: premium ? null : Math.max(0, GRATIS_GRENSE - brukt),
   });
+});
+
+// POST /api/avslutt-abonnement – kanseller Stripe-abonnement
+app.post("/api/avslutt-abonnement", async (req, res) => {
+  const { enhetId } = req.body;
+  if (!enhetId) return res.status(400).json({ feil: "enhetId mangler" });
+
+  try {
+    // Hent stripe_kunde_id fra databasen
+    const result = await db.query(
+      "SELECT stripe_kunde_id FROM premium_brukere WHERE enhet_id = $1 AND aktiv = true",
+      [enhetId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ feil: "Ingen aktivt abonnement funnet." });
+    }
+
+    const stripeKundeId = result.rows[0].stripe_kunde_id;
+
+    // Finn aktivt abonnement hos Stripe
+    const abonnementer = await stripe.subscriptions.list({
+      customer: stripeKundeId,
+      status: "active",
+      limit: 1,
+    });
+
+    if (abonnementer.data.length === 0) {
+      // Ikke noe aktivt abonnement i Stripe, oppdater bare databasen
+      await settPremium(enhetId, false);
+      premiumBrukere.delete(enhetId);
+      return res.json({ avsluttet: true, melding: "Abonnement avsluttet." });
+    }
+
+    // Kanseller abonnementet ved periodens slutt
+    await stripe.subscriptions.update(abonnementer.data[0].id, {
+      cancel_at_period_end: true,
+    });
+
+    return res.json({
+      avsluttet: true,
+      melding: "Abonnementet ditt er avsluttet og løper ut ved neste fornyelsesdato.",
+    });
+  } catch (err) {
+    console.error("Avmeldingsfeil:", err.message);
+    return res.status(500).json({ feil: "Kunne ikke avslutte abonnement." });
+  }
 });
 
 // POST /api/opprett-abonnement – lag Stripe Checkout session
