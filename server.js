@@ -513,6 +513,26 @@ app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async
   res.json({ mottatt: true });
 });
 
+// Debug – vis alle premium-brukere
+app.get("/api/debug/premium", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM premium_brukere");
+    res.json(result.rows);
+  } catch(e) {
+    res.json({ feil: e.message });
+  }
+});
+
+// Debug – slett alle premium-brukere (kun for testing!)
+app.delete("/api/debug/premium", async (req, res) => {
+  try {
+    await db.query("DELETE FROM premium_brukere");
+    res.json({ slettet: true });
+  } catch(e) {
+    res.json({ feil: e.message });
+  }
+});
+
 // Helsesjekk
 // ------------------------------------------------------------
 app.get("/", (req, res) => {
