@@ -75,7 +75,7 @@ const premiumBrukere = new Set();
 // ------------------------------------------------------------
 // Freemium: spørsmålstelling per enhet per dag
 // ------------------------------------------------------------
-const GRATIS_GRENSE = 3;
+const GRATIS_GRENSE = 2;
 const kvoter = new Map(); // { "enhetId_dato": antall }
 
 function getDatoNokkel(enhetId) {
